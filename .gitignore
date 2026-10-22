@@ -1,0 +1,10 @@
+# Python local/build output
+__pycache__/
+*.py[cod]
+Code/Python_code/.venv/
+Code/Python_code/build/
+Code/Python_code/dist/
+Code/Python_code/*.spec
+
+# Local session exports
+Code/Python_code/sessions/

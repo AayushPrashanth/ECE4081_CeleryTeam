@@ -26,11 +26,16 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+typedef struct
+{
+    uint16_t channel[6];
+} SampleFrame;
 
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define ADC_CHANNEL_COUNT 6U
 
 /* USER CODE END PD */
 
@@ -49,14 +54,14 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 #define SAMPLE_BUFFER_SIZE 256
 
-volatile uint16_t sample_buffer[SAMPLE_BUFFER_SIZE];
+volatile SampleFrame sample_buffer[SAMPLE_BUFFER_SIZE];
 
 volatile uint16_t write_index = 0;
 volatile uint16_t read_index = 0;
 
 volatile uint32_t dropped_samples = 0;
 
-char msg[32];
+char msg[64];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -124,17 +129,23 @@ int main(void)
     /* USER CODE END WHILE */
 	  if (read_index != write_index)
 	      {
-	          uint16_t adc_value =
+	          SampleFrame frame =
 	              sample_buffer[read_index];
 
 	          read_index =
 	              (read_index + 1)
 	              % SAMPLE_BUFFER_SIZE;
 
-	          int len = sprintf(
+	          int len = snprintf(
 	              msg,
-	              "%u\r\n",
-	              adc_value
+	              sizeof(msg),
+	              "%u,%u,%u,%u,%u,%u\r\n",
+	              frame.channel[0],
+	              frame.channel[1],
+	              frame.channel[2],
+	              frame.channel[3],
+	              frame.channel[4],
+	              frame.channel[5]
 	          );
 
 	          HAL_UART_Transmit(
@@ -217,11 +228,11 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.NbrOfConversion = ADC_CHANNEL_COUNT;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
@@ -237,10 +248,45 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_5;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_12CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_6;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_8;
+  sConfig.Rank = ADC_REGULAR_RANK_3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_9;
+  sConfig.Rank = ADC_REGULAR_RANK_4;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_10;
+  sConfig.Rank = ADC_REGULAR_RANK_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_12;
+  sConfig.Rank = ADC_REGULAR_RANK_6;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
     Error_Handler();
@@ -305,11 +351,11 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 460800;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.Mode = UART_MODE_TX;
   huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
   huart2.Init.OverSampling = UART_OVERSAMPLING_16;
   huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
@@ -350,28 +396,46 @@ void HAL_TIM_PeriodElapsedCallback(
 {
     if (htim->Instance == TIM6)
     {
-        HAL_ADC_Start(&hadc1);
+        SampleFrame frame;
+        uint8_t conversion_ok = 1U;
 
-        if (
-            HAL_ADC_PollForConversion(
-                &hadc1,
-                1
-            ) == HAL_OK
-        )
+        if (HAL_ADC_Start(&hadc1) != HAL_OK)
         {
-            uint16_t adc_value =
-                (uint16_t)
-                HAL_ADC_GetValue(&hadc1);
+            conversion_ok = 0U;
+        }
 
+        for (uint32_t channel = 0U;
+             (channel < ADC_CHANNEL_COUNT) && (conversion_ok != 0U);
+             channel++)
+        {
+            uint32_t timeout = 10000U;
+
+            while ((__HAL_ADC_GET_FLAG(&hadc1, ADC_FLAG_EOC) == 0U)
+                   && (timeout > 0U))
+            {
+                timeout--;
+            }
+
+            if (timeout == 0U)
+            {
+                conversion_ok = 0U;
+            }
+            else
+            {
+                frame.channel[channel] =
+                    (uint16_t)HAL_ADC_GetValue(&hadc1);
+            }
+        }
+
+        if (conversion_ok != 0U)
+        {
             uint16_t next_index =
                 (write_index + 1)
                 % SAMPLE_BUFFER_SIZE;
 
             if (next_index != read_index)
             {
-                sample_buffer[
-                    write_index
-                ] = adc_value;
+                sample_buffer[write_index] = frame;
 
                 write_index =
                     next_index;

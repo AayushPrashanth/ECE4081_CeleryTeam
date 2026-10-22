@@ -1,0 +1,22 @@
+NUCLEO-L432KC analogue acquisition mapping
+===========================================
+
+Serial frame order: A0,A1,A2,A3,A4,A6
+Serial format: six decimal 12-bit ADC values separated by commas and terminated by CRLF
+Baud rate: 460800
+Frame rate: approximately 1000 frames/second
+
+A0 = PA0 = ADC1_IN5  = Final signal used for RMS and %MVC
+A1 = PA1 = ADC1_IN6  = Before notch filter
+A2 = PA3 = ADC1_IN8  = Before notch filter
+A3 = PA4 = ADC1_IN9  = Reference electrode
+A4 = PA5 = ADC1_IN10 = Electrode 1
+A6 = PA7 = ADC1_IN12 = Electrode 2
+
+PA2 remains USART2_TX for the ST-LINK virtual COM port.
+USART2 is transmit-only so PA3 can be used as analogue input A2.
+
+A5 = PA6 = ADC1_IN11 is not currently sampled. The original request listed A6 but
+ended with an incomplete note about A5. Confirm the intended A5 signal before adding it.
+
+Official board mapping reference: ST UM1956, NUCLEO-L432KC Arduino Nano connectors.
